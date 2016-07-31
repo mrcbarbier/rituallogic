@@ -61,13 +61,13 @@ class Node(Atom):
 
     def __init__(self,uid,atoms=[]):
         self.uid=uid
-        self.atoms=set(Atom(a) for a in atoms)
+        self.atoms=set(atoms)
 
     def add_atom(self,atom):
-        self.atoms.add(Atom(atom))
+        self.atoms.add(atom)
 
     def rem_atom(self,atom):
-        self.atoms.remove(Atom(atom))
+        self.atoms.remove(atom)
 
     def apply_change(self,change):
         for atom in change.add:
@@ -75,6 +75,20 @@ class Node(Atom):
         for atom in change.rem:
             self.rem_atom(atom)
 
+class Relation(Atom):
+    """Relation between nodes.
+    Attributes:
+        nodes (tuple): Identifiers of the nodes involved in the relation (ordered)
+        atoms (set): Mutable collection of atoms characterizing the node.
+
+    Relations are defined uniquely by the nodes they involve and by their atoms."""
+
+    def __init__(self,nodes=[],atoms=[]):
+        self.nodes=tuple(nodes)
+        self.atoms=set(atoms)
+
+    def __repr__(self):
+        return str(self.nodes)
 
 class Action(Node):
     """Ritual action.
@@ -87,6 +101,7 @@ class Action(Node):
             {Keyword: Node}
         changes (dict): Assign new atoms to member nodes.
             {Node: set(Atom or AtomChange)}
+        relations (set): Change relations between nodes
 
     Single change of the state and relationships of nodes.
     Can involve any number of nodes in different roles taken from the
@@ -97,11 +112,35 @@ class Action(Node):
     takes these nodes as members and also assigns the atom "lit" to Fire.
     """
 
-    def __init__(self,uid,atoms=[],members={},changes={}):
+
+    @property
+    def children(self):
+        return self.nodes
+
+    @property
+    def nodes(self):
+        return set(self.members.values()).union( set(self.changes.keys()) )
+
+    def add_relation(self,relation):
+        """Add relation"""
+        self.relations.add(relation)
+
+    def add_change(self,node,change):
+        """Add either change or list of changes on node"""
+        self.changes.setdefault(node,[])
+        try:
+            self.changes[node]+=change
+        except:
+            self.changes.append(change)
+
+    def __init__(self,uid,atoms=[],members={},changes={},relations=()):
         self.uid=uid
         self.atoms=set(atoms)
         self.members=dict(members)
         self.changes=dict(changes)
+        self.relations=set(relations)
+
+        return
 
         if not set(ACTION_KEYWORDS)> set(members):
             #Some of the members have a role that is not listed in Parameters.
@@ -116,10 +155,14 @@ class Frame(Node):
     Attributes:
         uid (string): Identifier.
         atoms (set): Mutable collection of atoms characterizing the frame.
-        actions (set): Mutable collection of atoms characterizing the frame.
+        actions (set): Mutable collection of actions in the frame.
 
     (NB: 'Frame' as in single movie frame_."""
 
+
+    @property
+    def children(self):
+        return self.actions
 
     def __init__(self,uid,atoms=[],actions=[]):
         self.uid=uid
@@ -133,6 +176,10 @@ class Frame(Node):
             nodes+= a.members.values()
         return set(nodes)
 
+    def add_action(self,action):
+        """Adds an action to the frame"""
+        self.actions.add(action)
+
 class Sequence(Node):
 
     """Sequence of frames.
@@ -142,23 +189,38 @@ class Sequence(Node):
         atoms (set): Mutable collection of atoms characterizing the sequence.
         frames (list): Temporal succession of frames.
         nodes (dict): Automatically generated list of nodes
+        setup (Action): First action of the first frame.
     """
 
 
-    def __init__(self,uid,atoms=[],frames=[]):
+    @property
+    def children(self):
+        return self.frames
+
+    @property
+    def setup(self):
+        """First action of the first frame, setting up the initial state"""
+        if self.frames:
+            return list(self.frames[0].actions)[0]
+        return None
+
+    def __init__(self,uid,atoms=[],frames=[],setup=None):
         self.uid=uid
         self.atoms=set(atoms)
-        self.frames=[]
+        self.frames=list(frames)
         self.nodes={}
         self.set_frames(list(frames))
 
-    def add_frame(self,frame, position=-1):
+    def add_frame(self,frame, position=None):
         """Inserts a frame at given position, and records its nodes."""
         if frame in self.frames:
             return
         for node in frame.nodes:
             self.nodes.setdefault(node,[]).append(frame)
-        self.frames.insert(position,frame)
+        if position ==None:
+            self.frames.append(frame)
+        else:
+            self.frames.insert(position,frame)
 
     def set_frames(self,frames):
         """Replace current frames by given list."""
