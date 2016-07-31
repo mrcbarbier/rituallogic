@@ -16,7 +16,6 @@ class SequenceViewer(object):
     def frame_by_frame(self,sequence):
         """Take a sequence and returns a list of FrameGraphs"""
         graphs=[]
-        print '!!!!',sequence.setup.changes
         for frame in sequence.frames:
             if graphs:
                 graph=graphs[-1].copy()
@@ -33,9 +32,7 @@ class SequenceViewer(object):
                     graph.node[i.uid].setdefault('tags',[])
                     graph.node[i.uid]['tags']+=j
                 for r in action.relations:
-                    print r,type(r)
                     graph.add_edge(r.nodes[0],r.nodes[1],tags=list(r.atoms))
-            print graph.node
         #return
         return graphs
 
@@ -131,8 +128,7 @@ class TextParser(object):
                 objects[seq].add_frame(objects[frame])
                 for action in structure.successors(frame):
                     objects[frame].add_action(objects[action])
-            print objects[seq].frames
-            print 'Setup',objects[seq].setup.relations,objects[seq].setup.changes
+            #print 'Setup',objects[seq].setup.relations,objects[seq].setup.changes
         #print self.atom_db.instances
         return main
 
@@ -154,7 +150,7 @@ class TextParser(object):
 
     def parse_action(self,uid,content):
         tags,changes,relations=content.pop('tags',()),content.pop('state', () ),content.pop('relations',())
-        print relations
+        #print relations
         return Action(uid, atoms=tags,
             changes={self.parse_node(i):changes[i] for i in changes},
             relations=[self.parse_relation(r,{'tags':relations[r]}) for r in relations],
@@ -185,7 +181,7 @@ class GraphVisualization(object):
                         g.add_edge(i,j,name=e)
         else:
             g=graph
-        print g.edges()
+        #print g.edges()
 
         plt.figure()
         pos=self.pos=nx.spring_layout(g)

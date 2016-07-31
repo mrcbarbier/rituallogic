@@ -140,9 +140,8 @@ class Action(Node):
         self.changes=dict(changes)
         self.relations=set(relations)
 
-        return
 
-        if not set(ACTION_KEYWORDS)> set(members):
+        if not set(ACTION_KEYWORDS)>= set(members):
             #Some of the members have a role that is not listed in Parameters.
             raise Exception('Action Keywords {} not permitted.'.format(
                     sorted(set(members)- set(ACTION_KEYWORDS)) )
