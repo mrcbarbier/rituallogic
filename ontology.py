@@ -110,6 +110,12 @@ class Database(Ontology):
     def __getitem__(self,uid):
         return self.object[uid]
 
+    def get(self,uid,default=None):
+        if uid in self.object:
+            return self.__getitem__(uid)
+        else:
+            return default
+
 class QueryHandler(object):
 
     def query(self,sequence,exp):

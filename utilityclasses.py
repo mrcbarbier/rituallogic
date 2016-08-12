@@ -29,8 +29,12 @@ class SequenceViewer(object):
                     if not node.uid in graph.node:
                         graph.add_node(node.uid)
                 for i,j in action.changes.iteritems():
+                    #if i.uid in graph.node and 'tags' in graph.node[i.uid]:
+                        #print 'before',graph.node[i.uid]
                     graph.node[i.uid].setdefault('tags',[])
                     graph.node[i.uid]['tags']+=j
+                    #if i.uid in graph.node and 'tags' in graph.node[i.uid]:
+                        #print 'after',graph.node[i.uid]
                 for r in action.relations:
                     graph.add_edge(r.nodes[0],r.nodes[1],tags=list(r.atoms))
         #return
@@ -49,11 +53,63 @@ class DatabaseHandler(object):
         """Set database from file."""
         self.database=self.open(filename)
 
-class TextParser(object):
+class IOHandler(object):
 
-    def export(self,filename,sequence):
+    def export(self,filename,sequences):
         """Export data to file"""
-        return
+        txt=''''''
+        for seq in sequences:
+            tmp='''<sequence: {}\n'''.format(seq.uid)
+            if seq.uid in self.text_db:
+                tmp+='note: {}\n'.format(', '.join(self.text_db[seq.uid]))
+            if seq.atoms:
+                tmp+='tags: {}\n'.format(', '.join(seq.atoms) )
+            tmp+='>\n\n'
+
+            txt+=tmp
+            for fr in seq.frames:
+                if fr.uid.split('|')[-1]=='setup':
+                    act=fr.actions[0]
+                    tmp=''
+                    for n in act.changes:
+                        tmp+='<node: {}\ntags:{}>\n\n'.format(n.uid,
+                            ', '.join(act.changes[n]))
+                    for i in act.relations:
+                        tmp+='<relation:({})\ntags:{}>\n\n'.format(
+                            ','.join(i.nodes),
+                            ','.join(i.atoms ) )
+                    txt+=tmp
+                    continue
+                tmp='''<frame: {}\n'''.format(fr.uid.split('|')[-1] )
+                if fr.uid in self.text_db:
+                    tmp+='note: {}\n'.format(', '.join(self.text_db[fr.uid]))
+                if fr.atoms:
+                    tmp+='tags: {}\n'.format(', '.join(fr.atoms) )
+                tmp+='>\n\n'
+                txt+=tmp
+                for act in fr.actions:
+                    tmp='''<action: {}\n'''.format(act.uid.split('|')[-1])
+                    if act.uid in self.text_db:
+                        tmp+='note: {}\n'.format(', '.join(self.text_db[act.uid]))
+                    if act.atoms:
+                        tmp+='tags: {}\n'.format(', '.join(act.atoms) )
+                    for m in act.members:
+                        tmp+='{}:{}\n'.format(m,act.members[m])
+                    if act.changes:
+                        tmp+='state: {}\n'.format(', '.join(['{}:{}'.format(i,
+                            ','.join(act.changes[i] ) )
+                            for i in act.changes]   ))
+                    if act.relations:
+                        tmp+='relations: {}\n'.format(', '.join(['({}):({})'.format(
+                            ','.join(i.nodes),
+                            ','.join(i.atoms ) )
+                            for i in act.relations]   ))
+                    tmp+='>\n\n'
+                    txt+=tmp
+
+        fout=open(filename,'w')
+        fout.write(txt)
+        fout.close()
 
     def parse(self,filename):
         """Import data from file"""
@@ -61,6 +117,7 @@ class TextParser(object):
         fin=open(filename,'r')
         self.atom_db=Database('atom')
         self.node_db=Database('node')
+        self.text_db={}
         self.notes={}
 
         text=''''''
@@ -72,10 +129,13 @@ class TextParser(object):
         objects={}
         structure=nx.DiGraph()
         current=[]
+        cur_obj=[]
+        main=[]
 
         obj_pattern='<(.*?)>'
         for obj_txt in re.findall(obj_pattern,text):
-            lines=[l.replace(' ','') for l in obj_txt.split('$') if l]
+            lines=[l for l in obj_txt.split('$') if l]
+            lines = [l if 'note' in l else l.replace(' ','') for l in lines]
             typ,sep,uid=lines[0].partition(':')
             content={}
             for l in lines[1:]:
@@ -84,11 +144,13 @@ class TextParser(object):
                     clean=re.split(',(?![\s\w]*\))',spl[2])
                     if ':' in spl[2]:
                         #print cline
-                        clean={s.split(':')[0]:s.split(':')[1].split(',') for s in clean }
+                        clean=OrderedDict([(s.split(':')[0].replace('(','').replace(')',''),
+                            s.split(':')[1].replace('(','').replace(')','').split(','))
+                             for s in clean ])
                     content[spl[0]]=clean
             if typ=='node':
                 obj=self.parse_node(uid,content)
-                objects[current[0]].setup.add_change(obj,[])
+                objects[current[0]].setup.add_change(obj,obj.atoms)
             elif typ=='relation':
                 obj=self.parse_relation(uid,content)
                 objects[current[0]].setup.add_relation(obj)
@@ -97,39 +159,44 @@ class TextParser(object):
                 structure.add_edge(current[1],uid)
                 current=current[:2]+[uid]
                 obj=self.parse_action(uid,content)
+                if len(cur_obj)==2:
+                    cur_obj.append(obj)
+                else:
+                    cur_obj=cur_obj[:2]+[obj]
+                cur_obj[1].add_action(obj)
+
+                #Put all nodes that are never referenced before into setup action
                 for n in obj.nodes:
                     objects[current[0]].setup.add_change(n,[])
                 for r in obj.relations:
-                    objects[current[0]].setup.add_relation(r)
+                    for nt in r.nodes:
+                        n=self.node_db.get(nt,Node(nt))
+                        objects[current[0]].setup.add_change(n,[])
 
             elif typ=='frame':
                 uid='{}|{}'.format(current[0],uid)
                 structure.add_edge(current[0],uid)
                 current=current[:1]+[uid]
                 obj=self.parse_frame(uid,content)
+                if len(cur_obj)==1:
+                    cur_obj.append(obj)
+                else:
+                    cur_obj=cur_obj[:1]+[obj]
+                cur_obj[0].add_frame(obj)
             elif typ=='sequence':
                 structure.add_node(uid)
                 current=[uid]
                 obj=self.parse_sequence(uid,content)
+                cur_obj=[obj]
+                main.append(obj)
 
             objects[uid]=obj
             notes=content.pop('note',None)
             if notes:
-                self.notes[uid]=notes
+                self.text_db[uid]=[n.strip() for n in notes]
 
             for a in obj.atoms:
                 self.atom_db.add_instance(Atom(a),obj)
-        main=[]
-        for seq in structure.nodes():
-            if structure.predecessors(seq):
-                continue
-            main.append(objects[seq])
-            for frame in structure.successors(seq):
-                objects[seq].add_frame(objects[frame])
-                for action in structure.successors(frame):
-                    objects[frame].add_action(objects[action])
-            #print 'Setup',objects[seq].setup.relations,objects[seq].setup.changes
-        #print self.atom_db.instances
         return main
 
     def parse_node(self,uid,content={}):
@@ -150,11 +217,13 @@ class TextParser(object):
 
     def parse_action(self,uid,content):
         tags,changes,relations=content.pop('tags',()),content.pop('state', () ),content.pop('relations',())
+        #print changes
         #print relations
-        return Action(uid, atoms=tags,
-            changes={self.parse_node(i):changes[i] for i in changes},
+        act= Action(uid, atoms=tags,
+            changes=OrderedDict([(self.parse_node(i),changes[i]) for i in changes]),
             relations=[self.parse_relation(r,{'tags':relations[r]}) for r in relations],
             members={i:self.parse_node(j[0]) for i,j in content.iteritems()})
+        return act
 
     def parse_frame(self,uid,content):
         tags=content.pop('tags',())

@@ -8,7 +8,7 @@ from datatools import *
 
 
 if __name__ =='__main__':
-    parser=TextParser()
+    parser=IOHandler()
     sequences=parser.parse('example.dat')
     gviz=GraphVisualization()
     seqview=SequenceViewer()

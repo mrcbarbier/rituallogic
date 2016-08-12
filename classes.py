@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from parameters import *
-
+from collections import OrderedDict
 import re
 
 #========================================================================#
@@ -53,7 +53,7 @@ class Node(Atom):
 
     Attributes:
         uid (string): Identifier.
-        atoms (set): Mutable collection of atoms characterizing the node.
+        atoms (list): Mutable collection of atoms characterizing the node.
 
     Any entity of the ritual that exists beyond a single time step and may
     undergo transformations or be put in relation with others over time,
@@ -61,10 +61,10 @@ class Node(Atom):
 
     def __init__(self,uid,atoms=[]):
         self.uid=uid
-        self.atoms=set(atoms)
+        self.atoms=list(atoms)
 
     def add_atom(self,atom):
-        self.atoms.add(atom)
+        self.atoms.append(atom)
 
     def rem_atom(self,atom):
         self.atoms.remove(atom)
@@ -79,13 +79,13 @@ class Relation(Atom):
     """Relation between nodes.
     Attributes:
         nodes (tuple): Identifiers of the nodes involved in the relation (ordered)
-        atoms (set): Mutable collection of atoms characterizing the node.
+        atoms (list): Mutable collection of atoms characterizing the node.
 
     Relations are defined uniquely by the nodes they involve and by their atoms."""
 
     def __init__(self,nodes=[],atoms=[]):
         self.nodes=tuple(nodes)
-        self.atoms=set(atoms)
+        self.atoms=list(atoms)
 
     def __repr__(self):
         return str(self.nodes)
@@ -95,13 +95,13 @@ class Action(Node):
 
     Attributes:
         uid (string): Identifier.
-        atoms (set): Mutable collection of atoms characterizing the action,
+        atoms (list): Mutable collection of atoms characterizing the action,
             e.g. adverb, semantic/symbolic content, annotations.
         members (dict): Roles occupied by different nodes in the action.
             {Keyword: Node}
         changes (dict): Assign new atoms to member nodes.
-            {Node: set(Atom or AtomChange)}
-        relations (set): Change relations between nodes
+            {Node: list(Atom or AtomChange)}
+        relations (list): Change relations between nodes
 
     Single change of the state and relationships of nodes.
     Can involve any number of nodes in different roles taken from the
@@ -123,7 +123,7 @@ class Action(Node):
 
     def add_relation(self,relation):
         """Add relation"""
-        self.relations.add(relation)
+        self.relations.append(relation)
 
     def add_change(self,node,change):
         """Add either change or list of changes on node"""
@@ -135,10 +135,10 @@ class Action(Node):
 
     def __init__(self,uid,atoms=[],members={},changes={},relations=()):
         self.uid=uid
-        self.atoms=set(atoms)
-        self.members=dict(members)
-        self.changes=dict(changes)
-        self.relations=set(relations)
+        self.atoms=list(atoms)
+        self.members=OrderedDict(members)
+        self.changes=OrderedDict(changes)
+        self.relations=list(relations)
 
 
         if not set(ACTION_KEYWORDS)>= set(members):
@@ -153,8 +153,8 @@ class Frame(Node):
 
     Attributes:
         uid (string): Identifier.
-        atoms (set): Mutable collection of atoms characterizing the frame.
-        actions (set): Mutable collection of actions in the frame.
+        atoms (list): Mutable collection of atoms characterizing the frame.
+        actions (list): Mutable collection of actions in the frame.
 
     (NB: 'Frame' as in single movie frame_."""
 
@@ -165,8 +165,8 @@ class Frame(Node):
 
     def __init__(self,uid,atoms=[],actions=[]):
         self.uid=uid
-        self.atoms=set(atoms)
-        self.actions=set(actions)
+        self.atoms=list(atoms)
+        self.actions=list(actions)
 
     @property
     def nodes(self):
@@ -177,7 +177,19 @@ class Frame(Node):
 
     def add_action(self,action):
         """Adds an action to the frame"""
-        self.actions.add(action)
+        self.actions.append(action)
+
+
+    def new_action(self):
+        act= Action('{}|action{}'.format(self.uid,len(self.actions) ) )
+        self.add_action(act)
+        return act
+
+    def rem_action(self,action):
+        if action in self.actions:
+            self.actions.remove(action)
+            return 1
+        return 0
 
 class Sequence(Node):
 
@@ -185,7 +197,7 @@ class Sequence(Node):
 
     Attributes:
         uid (string): Identifier.
-        atoms (set): Mutable collection of atoms characterizing the sequence.
+        atoms (list): Mutable collection of atoms characterizing the sequence.
         frames (list): Temporal succession of frames.
         nodes (dict): Automatically generated list of nodes
         setup (Action): First action of the first frame.
@@ -200,12 +212,12 @@ class Sequence(Node):
     def setup(self):
         """First action of the first frame, setting up the initial state"""
         if self.frames:
-            return list(self.frames[0].actions)[0]
+            return self.frames[0].actions[0]
         return None
 
     def __init__(self,uid,atoms=[],frames=[],setup=None):
         self.uid=uid
-        self.atoms=set(atoms)
+        self.atoms=list(atoms)
         self.frames=list(frames)
         self.nodes={}
         self.set_frames(list(frames))
@@ -239,3 +251,19 @@ class Sequence(Node):
         atoms=self.atoms.union(seq.atoms)
         frames=self.frames+seq.frames
         return Sequence(uid,atoms,frames)
+
+    def new_frame(self):
+        fr= Frame('{}|frame{}'.format(self.uid,len(self.frames) ) )
+        self.add_frame(fr)
+        return fr
+
+    def rem_frame(self,frame):
+        if frame in self.frames:
+            self.frames.remove(frame)
+            for node in frame.nodes:
+                try:
+                    self.nodes[node].remove(frame)
+                except:
+                    pass
+            return 1
+        return 0
