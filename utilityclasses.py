@@ -2,6 +2,71 @@
 from ontology import *
 from classes import *
 
+
+def debug_caller_name(skip=2):
+    """Get a name of a caller in the format module.class.method
+    `skip` specifies how many levels of stack to skip while getting caller
+    name. skip=1 means "who calls me", skip=2 "who calls my caller" etc.
+    An empty string is returned if skipped levels exceed stack height
+    """
+    stack = inspect.stack()
+    start = 0 + skip
+    if len(stack) < start + 1:
+        return ''
+    parentframe = stack[start][0]
+    name = []
+    module = inspect.getmodule(parentframe)
+    # `modname` can be None when frame is executed directly in console
+    # TODO(techtonik): consider using __main__
+    if module:
+        name.append(module.__name__)
+        # detect classname
+    if 'self' in parentframe.f_locals:
+        # I don't know any way to detect call from the object method
+        # XXX: there seems to be no way to detect static method call - it will
+        # be just a function call
+        name.append(parentframe.f_locals['self'].__class__.__name__)
+    codename = parentframe.f_code.co_name
+    if codename != '<module>': # top level usually
+        name.append( codename ) # function or a method
+    del parentframe
+    return ".".join(name)
+
+
+class Path(str):
+    #Strings that represent filesystem paths
+    #When paths are added, gives a path
+    #When a string is added, gives a string
+    def __add__(self,x):
+        import os
+        if isinstance(x,Path):
+            return Path(os.path.normpath(os.path.join(str(self),x)))
+        return os.path.normpath(os.path.join(str(self),x))
+
+    def norm(self):
+        import os
+        return Path(os.path.normpath(str(self)))
+
+    def split(self):
+        """"""
+        import os
+        lst=[]
+        cur=os.path.split(self.norm())
+        while cur[-1]!='':
+            lst.insert(0,cur[-1])
+            cur=os.path.split(cur[0])
+        return lst
+
+    def mkdir(self):
+        """Make directories in path that don't exist"""
+        import os
+        cur=Path('./')
+        for intdir in self.split():
+            cur+=Path(intdir)
+            if not os.path.isdir(cur):
+                os.mkdir(cur)
+
+
 #========================================================================#
 # UTILITY CLASSES
 #========================================================================#
