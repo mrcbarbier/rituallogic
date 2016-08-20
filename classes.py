@@ -17,7 +17,10 @@ class Atom(object):
     """
 
     def __init__(self,uid):
-        self.uid=str(uid)
+        uid=unicode(uid)
+        if uid[0]=='-':
+            uid=uid[1:]
+        self.uid=uid
 
     def __repr__(self):
         return self.uid
@@ -53,27 +56,13 @@ class Node(Atom):
 
     Attributes:
         uid (string): Identifier.
-        atoms (list): Mutable collection of atoms characterizing the node.
 
     Any entity of the ritual that exists beyond a single time step and may
     undergo transformations or be put in relation with others over time,
     e.g. humans, materia, places, and relevant groupings or parts thereof."""
 
-    def __init__(self,uid,atoms=[]):
+    def __init__(self,uid):
         self.uid=uid
-        self.atoms=list(atoms)
-
-    def add_atom(self,atom):
-        self.atoms.append(atom)
-
-    def rem_atom(self,atom):
-        self.atoms.remove(atom)
-
-    def apply_change(self,change):
-        for atom in change.add:
-            self.add_atom(atom)
-        for atom in change.rem:
-            self.rem_atom(atom)
 
 class Relation(Atom):
     """Relation between nodes.
@@ -90,7 +79,26 @@ class Relation(Atom):
     def __repr__(self):
         return str(self.nodes)
 
-class Action(Node):
+class AtomContainer(Atom):
+    """Internal use only.
+    Abstract superclass for objects characterized by a collection of atoms.
+
+    Attributes:
+        uid (string): Identifier.
+        atoms (list): Mutable collection of atoms characterizing the object.
+    """
+
+    def __init__(self,uid,atoms=[]):
+        self.uid=uid
+        self.atoms=list(atoms)
+    def add_atom(self,atom):
+        self.atoms.append(atom)
+
+    def rem_atom(self,atom):
+        self.atoms.remove(atom)
+
+
+class Action(AtomContainer):
     """Ritual action.
 
     Attributes:
@@ -148,7 +156,7 @@ class Action(Node):
                 )
 
 
-class Frame(Node):
+class Frame(AtomContainer):
     """Collection of simultaneous actions, one time step in the ritual.
 
     Attributes:
@@ -191,7 +199,7 @@ class Frame(Node):
             return 1
         return 0
 
-class Sequence(Node):
+class Sequence(AtomContainer):
 
     """Sequence of frames.
 
