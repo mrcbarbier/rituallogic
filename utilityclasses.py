@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from ontology import *
 from classes import *
+from copy import deepcopy
 
 
 def debug_caller_name(skip=2):
@@ -9,6 +10,7 @@ def debug_caller_name(skip=2):
     name. skip=1 means "who calls me", skip=2 "who calls my caller" etc.
     An empty string is returned if skipped levels exceed stack height
     """
+    import inspect
     stack = inspect.stack()
     start = 0 + skip
     if len(stack) < start + 1:
@@ -66,6 +68,9 @@ class Path(str):
             if not os.path.isdir(cur):
                 os.mkdir(cur)
 
+    def curdir(self):
+        import os
+        return Path(os.path.split(self.norm())[0])
 
 #========================================================================#
 # UTILITY CLASSES
@@ -102,11 +107,20 @@ class TextDatabase(object):
 
 
 class SequenceViewer(object):
+    '''Converter of Sequence into list of Databases (one per Frame) compiling
+    incremental information from all Actions up to that point'''
+    def __init__(self,atom_query):
+        self.atom_query=atom_query
+
     class FrameGraph(Ontology):
         uid=None
 
     def frame_by_frame(self,sequence):
-        """Take a sequence and returns a list of FrameGraphs"""
+        """Take a sequence and returns a list of FrameGraphs (Ontologies)
+        Uses QueryHandler on atom_db to perform simple inference on effect
+        of changing states and relations.
+        (NB: simple inference = no black magic such as restoring a previous tag
+        when removing a tag that had replaced it)"""
         graphs=[]
         for frame in sequence.frames:
             if graphs:
@@ -117,28 +131,45 @@ class SequenceViewer(object):
             graphs.append(graph)
             for action in frame.actions:
                 for node in action.nodes:
-                    #print node.atoms
                     if not node.uid in graph.node:
                         graph.add_node(node.uid)
-                for i,lst in action.changes.iteritems():
-                    #if i.uid in graph.node and 'tags' in graph.node[i.uid]:
-                        #print 'before',graph.node[i.uid]
+                #STATES
+                for i,lst in action.states.iteritems():
                     for j in lst:
                         if '-' == j[0]:
                             j=j[1:]
                             if j in graph.node[i.uid]:
                                 graph.node[i.uid].remove(j)
                         else:
+                            if '+' == j[0]:
+                                j=j[1:]
                             if not j in graph.node[i.uid]:
                                 graph.node[i.uid].append(j)
-                    #if i.uid in graph.node and 'tags' in graph.node[i.uid]:
-                        #print 'after',graph.node[i.uid]
+
+                            #Apply inference rules
+                            for other in tuple(graph.node[i.uid]):
+                                if other ==j:
+                                    continue
+                                if 'exclude' in self.atom_query.get_relations(j,other):
+                                    graph.node[i.uid].remove(other)
+
+                #RELATIONS
                 for r in action.relations:
+                    src,tgt=r.nodes
                     for atom in r.atoms:
                         if '-' == atom[0]:
-                            graph.rem_edge(r.nodes[0],r.nodes[1],atom[1:] )
+                            graph.rem_edge(src,tgt,atom[1:] )
                         else:
-                            graph.add_edge(r.nodes[0],r.nodes[1],atom)
+                            if '+'==atom[0]:
+                                atom=atom[1:]
+                            graph.add_edge(src,tgt,atom)
+
+                            #Apply inference rules
+                            for other in tuple(graph.edge[src][tgt]):
+                                if other==atom:
+                                    continue
+                                if 'exclude' in self.atom_query.get_relations(atom,other):
+                                    graph.edge[src][tgt].remove(other)
         #return
         return graphs
 
@@ -160,9 +191,9 @@ class IOHandler(object):
                 if fr.uid.split('|')[-1]=='setup':
                     act=fr.actions[0]
                     tmp=''
-                    for n in act.changes:
+                    for n in act.states:
                         tmp+='<node: {}\ntags:{}>\n\n'.format(n.uid,
-                            ', '.join(act.changes[n]))
+                            ', '.join(act.states[n]))
                     for i in act.relations:
                         tmp+='<relation:({})\ntags:{}>\n\n'.format(
                             ','.join(i.nodes),
@@ -182,16 +213,20 @@ class IOHandler(object):
                         tmp+='text: {}\n'.format(', '.join(self.text_db.get(act.uid,'text')))
                     if act.atoms:
                         tmp+='tags: {}\n'.format(', '.join(act.atoms) )
-                    for m in act.members:
-                        tmp+='{}:{}\n'.format(m,act.members[m])
-                    if act.changes:
-                        tmp+='nodes: {}\n'.format(', '.join(['{}:{}'.format(i,
-                            ','.join(act.changes[i] ) )
-                            for i in act.changes]   ))
+                    #for m in act.roles:
+                        #tmp+='{}:{}\n'.format(m,act.members[m])
+                    if act.roles:
+                        tmp+='roles: {}\n'.format(', '.join(['{}:({})'.format(i,
+                            ','.join(act.roles[i] ) )
+                            for i in act.roles]   ))
+                    if act.states:
+                        tmp+='states: {}\n'.format(', '.join(['{}:({})'.format(i,
+                            ','.join(act.states[i] ) )
+                            for i in act.states]   ))
                     if act.relations:
                         tmp+='relations: {}\n'.format(', '.join(['({}):({})'.format(
-                            ','.join(i.nodes),
-                            ','.join(i.atoms ) )
+                            ','.join([unicode(z) for z in i.nodes]),
+                            ','.join( i.atoms ) )
                             for i in act.relations]   ))
                     tmp+='>\n\n'
                     txt+=tmp
@@ -200,12 +235,18 @@ class IOHandler(object):
         fout.write(txt)
         fout.close()
 
-    def parse(self,filename):
+    def parse(self,filename,objects=None,contents=None):
+        if objects is None:
+            objects={}
+        if contents is None:
+            contents={}
         """Import data from file"""
         from ontology import Database
         fin=open(filename,'r')
         self.atom_db=Database('atom')
         self.node_db=Database('node')
+        self.action_db=Database('action')
+        self.sequence_db=Database('sequence')
         self.text_db=TextDatabase()
 
         text=''''''
@@ -214,8 +255,6 @@ class IOHandler(object):
                 continue
             text+=l.strip()+'$'
 
-        objects={}
-        #structure=nx.DiGraph()
         current=[]
         cur_obj=[]
         main=[]
@@ -224,19 +263,90 @@ class IOHandler(object):
         for obj_txt in re.findall(obj_pattern,text):
             lines=[l for l in obj_txt.split('$') if l]
             lines = [l if 'text' in l else l.replace(' ','') for l in lines]
-            typ,sep,uid=lines[0].partition(':')
+            typ,sep,uids=lines[0].partition(':')
+            uid,sep,inherit=[x.strip() for x in uids.partition('@')]
+            ancestors=[a.strip() for a in inherit.split(',') if a.strip() ]
+
+            #AUTOMATIC APPENDING OF UID
+            idprefix=''
+            if typ=='action':
+                idprefix='{}|'.format(current[1])
+                uid=idprefix+uid
+                current=current[:2]+[uid]
+            elif typ=='frame':
+                idprefix='{}|'.format(current[0])
+                uid=idprefix+uid
+                current=current[:1]+[uid]
+            elif typ=='sequence':
+                uid=idprefix+uid
+                current=[uid]
+
+
             content={}
+
+            #INHERITANCE
+            for ancestor in ancestors:
+                nbpipes=len(ancestor.split('|'))
+                ancid='|'.join(idprefix.split('|')[nbpipes:])+ancestor.strip()
+                prevcontent=contents[ancid]
+                content.update(deepcopy(prevcontent))
+            if uid in contents: #If the same uid was already used previously, overwrite
+                content.update(deepcopy(contents[uid]))
+                #print content
+
             for l in lines[1:]:
-                spl=l.partition(':')
-                if spl[2]:
-                    clean=re.split(',(?![\s\w]*\))',spl[2])
-                    if ':' in spl[2]:
-                        #print cline
-                        clean=OrderedDict([(s.split(':')[0].replace('(','').replace(')',''),
-                            s.split(':')[1].replace('(','').replace(')','').split(','))
-                             for s in clean ])
-                    content[spl[0]]=clean
-            if typ=='node':
+                key,sep,val=l.partition(':')
+                if val:
+                    clean=re.split(',(?![\s\w,-_]*\))',val)
+                    if ':' in val:
+                        listmode=False
+                        cleandict=OrderedDict()
+                        for s in clean:
+                            i,j = [x.replace('(','').replace(')','') for x in s.split(':')]
+                            j=j.split(',')
+                            if i in cleandict:
+                                cleandict[i]+=j
+                            else:
+                                cleandict[i]=j
+                        clean=cleandict
+                    else:
+                        listmode=True
+                    if key[0]=='+':
+                        key=key[1:]
+                        if listmode:
+                            content[key]+=clean
+                        else:
+                            for i in clean:
+                                content[key].setdefault(i,[])
+                                content[key][i]+=clean[i]
+
+                    elif key[0]=='-':
+                        key=key[1:]
+                        for i in clean:
+                            if listmode:
+                                if i in content[key]:
+                                    content[key].remove(i)
+                            else:
+                                content[key].setdefault(i,[])
+                                for j in clean[i]:
+                                    if j in content[key][i]:
+                                        content[key][i].remove(j)
+                                if not content[key][i]:
+                                    del content[key][i]
+                    else:
+                        content[key]=clean
+            contents[uid]={}
+            contents[uid].update(content)
+
+            #PARSING OBJECT
+            if typ=='include':
+                incl=Path(filename).curdir()+ uid
+                main+=self.parse(incl,objects,contents)
+                continue
+            elif typ=='ontology':
+                self.parse_ontology(uid,content)
+                continue
+            elif typ=='node':
                 obj=self.parse_node(uid,content)
                 objects[current[0]].setup.add_change(obj,content.get('tags',[]) )
 
@@ -246,9 +356,6 @@ class IOHandler(object):
                 for a in obj.atoms:
                     self.node_db.add_edge(obj.nodes[0],obj.nodes[1],a)
             elif typ=='action':
-                uid='{}|{}'.format(current[1],uid)
-                #structure.add_edge(current[1],uid)
-                current=current[:2]+[uid]
                 obj=self.parse_action(uid,content)
                 if len(cur_obj)==2:
                     cur_obj.append(obj)
@@ -265,9 +372,6 @@ class IOHandler(object):
                         objects[current[0]].setup.add_change(n,[])
 
             elif typ=='frame':
-                uid='{}|{}'.format(current[0],uid)
-                #structure.add_edge(current[0],uid)
-                current=current[:1]+[uid]
                 obj=self.parse_frame(uid,content)
                 if len(cur_obj)==1:
                     cur_obj.append(obj)
@@ -275,8 +379,6 @@ class IOHandler(object):
                     cur_obj=cur_obj[:1]+[obj]
                 cur_obj[0].add_frame(obj)
             elif typ=='sequence':
-                #structure.add_node(uid)
-                current=[uid]
                 obj=self.parse_sequence(uid,content)
                 cur_obj=[obj]
                 main.append(obj)
@@ -284,6 +386,7 @@ class IOHandler(object):
             objects[uid]=obj
             notes=content.pop('note',[])+content.pop('text',[])
             if notes:
+                #print 'GETTING TEXT',uid,notes
                 n=notes.pop(0)
                 self.text_db.set(uid,'text',n.strip())
                 [self.text_db.add(uid,'comment',n.strip()) for n in notes]
@@ -295,16 +398,39 @@ class IOHandler(object):
         for seq in main:
             for fr in seq.frames:
                 for act in fr.actions:
-                    for node in act.changes:
-                        for a in act.changes[node]:
+                    for node in act.states:
+                        for a in act.states[node]:
                             self.atom_db.add_instance(Atom(a),(act,node) )
                     for rel in act.relations:
                         for a in rel.atoms:
                             self.atom_db.add_instance(Atom(a),(act,rel.nodes ) )
-
+        #self.objects=objects
         return main
 
-    def parse_node(self,uid,content={}):
+    def parse_ontology(self,typ,content=None):
+        if content is None:
+            content={}
+        if typ=='atom':
+            ont=self.atom_db
+        elif typ=='node':
+            ont=self.node_db
+        elif typ=='action':
+            ont=self.action_db
+        elif typ=='sequence':
+            ont=self.sequence_db
+        for s in content.get('states',[]):
+            states=content['states']
+            for elem in states:
+                ont.add_node(elem,states[elem])
+        for r in content.get('relations',[]):
+            obj=r.replace('(','').replace(')','').split(',')
+            for rel in content['relations'][r]:
+                ont.add_edge(obj[0],obj[1],rel)
+
+    def parse_node(self,uid,content=None):
+        if content is None:
+            content={}
+
         if not uid in self.node_db:
             #tags=content.pop('tags',())
             node= Node(uid)#,atoms=tags)
@@ -314,21 +440,25 @@ class IOHandler(object):
             #node.atoms=list(set(node.atoms).union() )
         return node
 
-    def parse_relation(self,uid,content={}):
+    def parse_relation(self,uid,content=None):
+        if content is None:
+            content={}
+
         nodes=uid.replace('(','').replace(')','').split(',')
         for n in nodes:
             self.parse_node(n)
         return Relation(nodes,atoms=content.pop('tags',()))
 
     def parse_action(self,uid,content):
-        tags,changes,relations=content.pop('tags',()),content.pop('nodes', ()
-            ),content.pop('relations',())
-        #print changes
+        tags,states,relations,roles=content.pop('tags',()),content.pop('states', ()
+            ),content.pop('relations',()),content.pop('roles',{} )
+        #print states
         #print relations
+        roles.update(OrderedDict([( j[0],[i]) for i, j in content.iteritems()]) )
         act= Action(uid, atoms=tags,
-            changes=OrderedDict([(self.parse_node(i),changes[i]) for i in changes]),
+            states=OrderedDict([(self.parse_node(i),states[i]) for i in states]),
             relations=[self.parse_relation(r,{'tags':relations[r]}) for r in relations],
-            members={i:self.parse_node(j[0]) for i,j in content.iteritems()})
+            roles=OrderedDict([(self.parse_node(i),roles[i]) for i in roles]) )
         return act
 
     def parse_frame(self,uid,content):
@@ -341,38 +471,3 @@ class IOHandler(object):
         setup_frame=Frame(uid+'|setup',actions=[setup])
         return Sequence(uid,atoms=tags,frames=[setup_frame])
 
-
-class GraphVisualization(object):
-    """Loads a data structure and represents it as a graph."""
-
-    def plot(self,graph,hold=0):
-        import networkx as nx,matplotlib.pyplot as plt
-        if not isinstance(graph, nx.DiGraph):
-            g=nx.DiGraph()
-            for i in graph.edge:
-                edges=graph.edge[i]
-                for j in edges:
-                    for e in edges[j]:
-                        g.add_edge(i,j,name=e)
-        else:
-            g=graph
-        #print g.edges()
-
-        plt.figure()
-        pos=self.pos=nx.spring_layout(g)
-        nx.draw_networkx_edges(g,pos=pos,edgelist=[(i,j) for i,j,d in
-            g.edges_iter(data=True) if d.get('name',None)=='IN'],edge_color='g' )
-        nx.draw_networkx_edges(g,pos=pos,edgelist=[(i,j) for i,j,d in
-            g.edges_iter(data=True) if d.get('name',None)!='IN'],edge_color='k' )
-
-        nx.draw_networkx_nodes(g,pos=pos  )
-        nx.draw_networkx_labels(g,pos=pos,labels={n:str(n)+str(g.node[n].get(
-            'tags','') ) for n in g.nodes() }  )
-
-        edge_labels=dict([((u,v,),d.get('name',d.get('tags','')) )
-             for u,v,d in g.edges(data=True)])
-        nx.draw_networkx_edge_labels(g,pos,edge_labels=edge_labels)
-
-        #nx.draw(g)
-        if not hold:
-            plt.show()

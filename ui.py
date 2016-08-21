@@ -9,11 +9,12 @@ from ontology import *
 from utilityclasses import *
 #from datatools import *
 
-
+from qtext import *
 
 
 class Editor(QtGui.QMainWindow):
     SAVES=0
+    MAXSAVES=100
     block_changes=0
     _focused=None
     log_path='./logs'
@@ -35,16 +36,19 @@ class Editor(QtGui.QMainWindow):
         self.timeline_editor.make_connections()
         self.make_connections()
 
-        try:
+        Path(self.log_path).mkdir()
+        Path(self.backup_path).mkdir()
 
+        #try:
+        if 1:
             for l in open(Path(self.log_path)+'.last','r'):
                 if not l.strip():
                     continue
                 filename=l.strip()
                 self.set_data_from(filename)
-        except Exception as e:
-            print e
-            pass
+        #except Exception as e:
+            #print e
+            #pass
 
     def make_connections(self):
         #Connections
@@ -62,8 +66,10 @@ class Editor(QtGui.QMainWindow):
 
     def load_menu(self):
         name = QtGui.QFileDialog.getOpenFileName(self, 'Load File')
-        try:
+        if 1:
             self.set_data_from(name)
+        try:
+            True
         except Exception as e:
             diag=QtGui.QErrorMessage()
             diag.showMessage('Could not load {}: {}'.format(name,e) )
@@ -80,6 +86,45 @@ class Editor(QtGui.QMainWindow):
             self._block_changes=val
         def make_backup(self):
             self.parent.make_backup()
+
+        def save_tree_state(self,tree):
+            #To restore tree state
+            prevstate={}
+            for i,j in self.dico.iteritems():
+                if not isinstance(j, QtGui.QTreeWidgetItem):
+                    continue
+                if not j.treeWidget()==tree:
+                    print 'barking up the wrong tree'
+                    continue
+                state={}
+                state['expanded']=tree.isItemExpanded(j)
+                state['selected']=tree.isItemSelected(j)
+                if hasattr(i,'uid'):
+                    prevstate[i.uid]=state
+                else:
+                    prevstate[i]=state
+            return prevstate
+
+        def restore_tree_state(self,tree,prevstate):
+            changed={}
+            for uid in prevstate:
+                if uid in self.dico:
+                    i=[uid]
+                else:
+                    i=[z for z in self.dico if hasattr(z,'uid') and z.uid == uid]
+                if i:
+                    i=i[0]
+                    state=prevstate[uid]
+                    #print i, state
+
+                    if state['expanded']:
+                        tree.expandItem(self.dico[i])
+                    if state['selected']:
+                        tree.setItemSelected(self.dico[i],1)
+                        tree.scrollToItem(self.dico[i])
+                        tree.setCurrentItem(self.dico[i])
+                    changed[i]=state
+            return changed
 
     class DatabaseEditor(SubEditor):
         def __init__(self,parent):
@@ -141,8 +186,10 @@ class Editor(QtGui.QMainWindow):
             self.set_display(query.filter(text,field=field,rule=rule) )
 
         def set_display(self,content=None):
-            self.dico={}
             twidget=self.ui.onto_table
+            prevstate=self.save_tree_state(twidget)
+
+            self.dico={}
             twidget.clear()
             if content is None:
                 ont=self.current_ontology
@@ -155,11 +202,18 @@ class Editor(QtGui.QMainWindow):
                     pwid=self.dico.get(e[1],QtGui.QTreeWidgetItem(twidget))
                     pwid.setText(0,e[1])
                     self.dico[e[1]]=pwid
-                    wid=self.dico.get(e[0],QtGui.QTreeWidgetItem(pwid))
+                    wid=QtGui.QTreeWidgetItem(pwid)
+                    if e[0] in self.dico:
+                        prev=self.dico[e[0]]
+                        wid.addChildren(prev.takeChildren())
+                        self.dico[e[0]]=wid
+                        twidget.removeItemWidget(prev,-1)
                     wid.setText(0,e[0])
                     self.dico[e[0]]=wid
 
                     parent[e[0]]=wid
+
+                    #print e,wid, wid.text(0),pwid.text(0)
             for i,j,e in content:
                 if i in parent:
                     widget=parent[i]
@@ -176,10 +230,12 @@ class Editor(QtGui.QMainWindow):
                 self.dico[(i,j,e)]=item
 
             self.block_changes=False
-            twidget.expandAll()
+            #twidget.expandAll()
+            self.restore_tree_state(twidget,prevstate)
 
 
     class TimelineEditor(SubEditor):
+        _focused =None
         def __init__(self,parent):
             self.parent=parent
             self.ui=parent.ui
@@ -194,10 +250,13 @@ class Editor(QtGui.QMainWindow):
             data=self._focused
             if not data:
                 return
+            if self.block_changes:
+                return 0
             data.uid=unicode(self.ui.uid_edit.text())
             data.atoms=unicode(self.ui.tags_edit.document().toPlainText()).replace(' ','').split(',')
-            comments=unicode(self.ui.comment_edit.document().toPlainText()).replace(' ','').split(',')
-            self.text_db.set(data.uid,'comment',comments)
+            text=unicode(self.ui.text_edit.document().toPlainText()).split('\n')
+            self.text_db.set(data.uid,'text',text)
+            self.make_backup()
 
 
         def change_dataitem(self,view):
@@ -206,31 +265,30 @@ class Editor(QtGui.QMainWindow):
             handled=0
             data=self.dico[view]
             content=[unicode(view.data(c,0).toString()) for c in range(view.columnCount())]
-            #print content
             if isinstance(data[0],Action):
-                if data[1]=='member':
+                if data[1]=='role':
                     i,j=content
-                    i=data[2]
+                    #i=data[2]
                     if not j in self.node_db:
-                        self.node_db.add(Node(j))
-                    data[0].members[i]=self.node_db[j]
-                    self.set_action(data[0])
+                        self.node_db.add(Node(i))
+                    data[0].states[self.node_db[i]]=j.replace(' ','').split(',')
+                    #self.set_action(data[0])
                     handled=1
-                elif data[1]=='nodestate':
+                elif data[1]=='state':
                     i,j=content
                     if not i in self.node_db:
                         self.node_db.add(Node(i))
-                    data[0].changes[self.node_db[i]]=j.replace(' ','').split(',')
+                    data[0].states[self.node_db[i]]=j.replace(' ','').split(',')
                     handled=1
                 elif data[1]=='relationship':
                     i,j=[x.replace(' ','').split(',') for x in content]
                     for n in i:
-                        if not i in self.node_db:
-                            self.node_db.add(Node(i))
+                        if not n in self.node_db:
+                            self.node_db.add(Node(n))
                     i=[self.node_db[x] for x in i]
                     handled=1
-                    idx=self.relationship_table.selectedIndexes()[0].row()
-                    if idx<len(data.relations):
+                    idx=self.ui.relationship_table.selectedIndexes()[0].row()
+                    if idx<len(data[0].relations):
                         data[0].relations[idx]=Relation(i,j)
                     else:
                         data[0].relations.append(Relation(i,j))
@@ -244,9 +302,8 @@ class Editor(QtGui.QMainWindow):
             self._focused=None
             self.ui.uid_edit.setText(obj.uid)
             self.ui.tags_edit.setPlainText(', '.join(obj.atoms))
-            self.ui.comment_edit.setPlainText(', '.join(self.text_db.get(obj,'comment' )))
+            self.ui.text_edit.setPlainText('\n'.join(self.text_db.get(obj.uid,'text' )))
             self._focused=obj
-            #TODO: COMMENTS
 
         def set_atom_completer(self,edit):
             completer = QtGui.QCompleter(self.atom_db.keys())
@@ -296,6 +353,7 @@ class Editor(QtGui.QMainWindow):
         def set_frame(self,frame=None,**kwargs):
             if not self.sequences:
                 return
+            self.block_changes=1
             if frame is None or not isinstance(frame,Frame):
                 sel=self.ui.timeline_tree.selectedItems()
                 if not sel:
@@ -326,7 +384,6 @@ class Editor(QtGui.QMainWindow):
                 item=QtGui.QListWidgetItem(self.ui.actionlist)
                 self.dico[item]=action
                 self.dico[action]=item
-                #print item, action
                 item.setText(action.uid.split('|')[-1] )
             graph=None
             for gseq in self.timeline:
@@ -353,6 +410,7 @@ class Editor(QtGui.QMainWindow):
 
             if sel and data.actions:
                 self.set_action()#data.actions[0])
+            self.block_changes=0
 
         def set_action(self,action=None):
             if action is None or not isinstance(action,Action):
@@ -374,26 +432,25 @@ class Editor(QtGui.QMainWindow):
             else:
                 data=action
                 self.ui.actionlist.setCurrentItem(self.dico[data])
-            #Members
+            #roles
             self.ui.role_table.clear()
-            for i in ACTION_KEYWORDS:
+            #for i in ACTION_KEYWORDS:
 
-            #for i,j in data.members.iteritems():
+            for i,j in data.roles.iteritems():
+            #for i,j in data.roles.iteritems():
                 item=QtGui.QTreeWidgetItem()
-                self.dico[item]=(data,'member',i)
+                self.dico[item]=(data,'role',i)
                 item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
-                item.setText(0,i)
-                if i in data.members:
-                    j=data.members[i]
-                    item.setText(1,j.uid)
+                item.setText(0,i.uid)
+                item.setText(1,', '.join(j))
                 self.ui.role_table.addTopLevelItem(item)
 
             #Nodestates
             self.ui.nodestate_table.clear()
             #print data.uid,data.changes
-            for i,j in data.changes.iteritems():
+            for i,j in data.states.iteritems():
                 item=QtGui.QTreeWidgetItem()
-                self.dico[item]=(data,'nodestate',i)
+                self.dico[item]=(data,'state',i)
                 item.setFlags(item.flags() | QtCore.Qt.ItemIsEditable)
                 item.setText(0,i.uid)
                 item.setText(1,', '.join(j))
@@ -460,12 +517,28 @@ class Editor(QtGui.QMainWindow):
             self.make_backup()
 
         def renew_tree(self):
+            prevstate=self.save_tree_state(self.ui.timeline_tree)
             self.ui.timeline_tree.clear()
             seqs=tuple(self.sequences)
             self.sequences[:]=[]
             for seq in seqs:
                 self.add_sequence(seq,alone=0)
             self.set_frame()
+            self.restore_tree_state(self.ui.timeline_tree,prevstate)
+
+        def restore_tree_state(self,tree,prev):
+            changed=Editor.SubEditor.restore_tree_state(self,tree,prev)
+            for i in changed:
+                if changed[i].get('selected',False):
+                    self.block_changes=1
+                    if isinstance(i,Frame):
+                        self.set_frame(i)
+                    elif isinstance(i,Sequence):
+                        self.set_frame(i.frames[0])
+                    self.set_focused_object(i)
+                    self.block_changes=0
+
+            return changed
 
         def new_frame(self):
             indexes = self.ui.timeline_tree.selectedIndexes()
@@ -529,7 +602,7 @@ class Editor(QtGui.QMainWindow):
             ui.timeline_switch.activated.connect(self.set_timeline_widget)
             ui.uid_edit.textChanged.connect(self.change_focused)
             ui.tags_edit.textChanged.connect(self.change_focused)
-            ui.comment_edit.textChanged.connect(self.change_focused)
+            ui.text_edit.textChanged.connect(self.change_focused)
 
             ui.timeline_tree.itemPressed.connect(self.set_frame)
             ui.timeline_tree.currentItemChanged.connect(self.set_frame)
@@ -545,23 +618,31 @@ class Editor(QtGui.QMainWindow):
             ui.nodestate_table.itemChanged.connect(self.change_dataitem)
             ui.relationship_table.itemChanged.connect(self.change_dataitem)
 
+
+            #for tree in (ui.role_table,ui.nodestate_table,ui.relationship_table):
+                #tree.setItemDelegate(ItemWordWrap(tree))
+                #tree.setWordWrap(True)
+
         def set_data(self,sequences):
             self.text_db=self.parent.text_db
             self.atom_db=self.parent.atom_db
             self.node_db=self.parent.node_db
+            self.action_db=self.parent.action_db
+            self.sequence_db=self.parent.sequence_db
 
 
             tree=self.ui.timeline_tree
+            prevstate=self.save_tree_state(tree)
             self.sequences[:]=[]
             self.dico={}
             tree.clear()
             [self.add_sequence(s,alone=False) for s in sequences]
-            #print self.sequences[0].frames[0].actions[0].changes, sequences[0].frames[0].actions[0].changes
             self.set_frame()
             if sequences:
                 self.set_focused_object(sequences[0])
             self.timeline=[self.seqview.frame_by_frame(seq) for seq in self.sequences]
-            tree.expandAll()
+            #tree.expandAll()
+            self.restore_tree_state(tree,prevstate)
 
 
     def keyPressEvent(self, event):
@@ -582,12 +663,17 @@ class Editor(QtGui.QMainWindow):
 
     def set_data_from(self,filename,log=1):
         self.iohandler=parser=IOHandler()
-        self.timeline_editor.seqview=SequenceViewer()
         sequences=parser.parse(filename)
 
         self.text_db=parser.text_db
         self.atom_db=parser.atom_db
         self.node_db=parser.node_db
+        self.action_db=parser.action_db
+        self.sequence_db=parser.sequence_db
+        #self.objects=parser.objects
+
+        self.atom_query=QueryHandler(parser.atom_db)
+        self.timeline_editor.seqview=SequenceViewer(self.atom_query)
 
         self.timeline_editor.set_data(sequences)
         self.db_editor.set_data()
@@ -616,16 +702,19 @@ class Editor(QtGui.QMainWindow):
         #print "Making backup",current
         self.save_data_to(current,log=0)
         self.SAVES+=1
+
         self.undo_stack.append(current)
-        if len(self.undo_stack)>20:
+        self.redo_stack[:]=[]
+        if len(self.undo_stack)>self.MAXSAVES:
             self.undo_stack.pop(0)
+            self.SAVES=0
         self.block_changes=False
 
     def undo(self):
         if len(self.undo_stack)<2:
             return
         last=self.undo_stack.pop(-1)
-        #print 'UNDO:',last
+        #print 'UNDO:',last,self.undo_stack
         #self.block_changes=True
         self.set_data_from(self.undo_stack.pop(-1),log=0)
         self.redo_stack.append(last)

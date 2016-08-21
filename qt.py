@@ -2,7 +2,7 @@
 
 # Form implementation generated from reading ui file 'untitled.ui'
 #
-# Created: Sat Aug 20 15:20:58 2016
+# Created: Sun Aug 21 01:24:20 2016
 #      by: PyQt4 UI code generator 4.10.4
 #
 # WARNING! All changes made in this file will be lost!
@@ -26,6 +26,7 @@ except AttributeError:
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         MainWindow.setObjectName(_fromUtf8("MainWindow"))
+        MainWindow.resize(1127, 966)
         self.centralwidget = QtGui.QWidget(MainWindow)
         self.centralwidget.setObjectName(_fromUtf8("centralwidget"))
         self.verticalLayout_12 = QtGui.QVBoxLayout(self.centralwidget)
@@ -87,19 +88,6 @@ class Ui_MainWindow(object):
         self.tags_edit.setObjectName(_fromUtf8("tags_edit"))
         self.horizontalLayout_6.addWidget(self.tags_edit)
         self.verticalLayout_3.addLayout(self.horizontalLayout_6)
-        self.label_3 = QtGui.QLabel(self.tab_timeline)
-        self.label_3.setObjectName(_fromUtf8("label_3"))
-        self.verticalLayout_3.addWidget(self.label_3)
-        self.comment_edit = QtGui.QTextEdit(self.tab_timeline)
-        self.comment_edit.setTabChangesFocus(True)
-        self.comment_edit.setAcceptRichText(False)
-        self.comment_edit.setObjectName(_fromUtf8("comment_edit"))
-        self.verticalLayout_3.addWidget(self.comment_edit)
-        self.line_2 = QtGui.QFrame(self.tab_timeline)
-        self.line_2.setFrameShape(QtGui.QFrame.HLine)
-        self.line_2.setFrameShadow(QtGui.QFrame.Sunken)
-        self.line_2.setObjectName(_fromUtf8("line_2"))
-        self.verticalLayout_3.addWidget(self.line_2)
         self.label_9 = QtGui.QLabel(self.tab_timeline)
         self.label_9.setObjectName(_fromUtf8("label_9"))
         self.verticalLayout_3.addWidget(self.label_9)
@@ -110,7 +98,6 @@ class Ui_MainWindow(object):
         self.verticalLayout_3.addWidget(self.text_edit)
         self.verticalLayout_3.setStretch(1, 1)
         self.verticalLayout_3.setStretch(3, 1)
-        self.verticalLayout_3.setStretch(6, 1)
         self.verticalLayout.addLayout(self.verticalLayout_3)
         self.timeline_switch = QtGui.QComboBox(self.tab_timeline)
         self.timeline_switch.setObjectName(_fromUtf8("timeline_switch"))
@@ -140,8 +127,8 @@ class Ui_MainWindow(object):
         self.role_table.setAlternatingRowColors(True)
         self.role_table.setWordWrap(True)
         self.role_table.setObjectName(_fromUtf8("role_table"))
-        self.role_table.header().setDefaultSectionSize(80)
-        self.role_table.header().setMinimumSectionSize(80)
+        self.role_table.header().setDefaultSectionSize(120)
+        self.role_table.header().setMinimumSectionSize(120)
         self.verticalLayout_7.addWidget(self.role_table)
         self.layoutWidget_2 = QtGui.QWidget(self.splitter)
         self.layoutWidget_2.setObjectName(_fromUtf8("layoutWidget_2"))
@@ -156,7 +143,7 @@ class Ui_MainWindow(object):
         self.nodestate_table.setWordWrap(True)
         self.nodestate_table.setObjectName(_fromUtf8("nodestate_table"))
         self.nodestate_table.header().setDefaultSectionSize(120)
-        self.nodestate_table.header().setMinimumSectionSize(80)
+        self.nodestate_table.header().setMinimumSectionSize(120)
         self.verticalLayout_8.addWidget(self.nodestate_table)
         self.layoutWidget_3 = QtGui.QWidget(self.splitter)
         self.layoutWidget_3.setObjectName(_fromUtf8("layoutWidget_3"))
@@ -170,9 +157,8 @@ class Ui_MainWindow(object):
         self.relationship_table.setAlternatingRowColors(True)
         self.relationship_table.setWordWrap(True)
         self.relationship_table.setObjectName(_fromUtf8("relationship_table"))
-        self.relationship_table.header().setCascadingSectionResizes(False)
         self.relationship_table.header().setDefaultSectionSize(160)
-        self.relationship_table.header().setHighlightSections(False)
+        self.relationship_table.header().setMinimumSectionSize(120)
         self.relationship_table.header().setStretchLastSection(True)
         self.verticalLayout_9.addWidget(self.relationship_table)
         self.horizontalLayout.addWidget(self.splitter)
@@ -278,7 +264,7 @@ class Ui_MainWindow(object):
         self.verticalLayout_12.addLayout(self.verticalLayout_13)
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QtGui.QMenuBar(MainWindow)
-        self.menubar.setGeometry(QtCore.QRect(0, 0, 1180, 30))
+        self.menubar.setGeometry(QtCore.QRect(0, 0, 1127, 30))
         self.menubar.setObjectName(_fromUtf8("menubar"))
         self.menuFile = QtGui.QMenu(self.menubar)
         self.menuFile.setObjectName(_fromUtf8("menuFile"))
@@ -296,7 +282,7 @@ class Ui_MainWindow(object):
 
         self.retranslateUi(MainWindow)
         self.tabWidget.setCurrentIndex(0)
-        self.timeline_stacked.setCurrentIndex(1)
+        self.timeline_stacked.setCurrentIndex(0)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
 
     def retranslateUi(self, MainWindow):
@@ -305,14 +291,13 @@ class Ui_MainWindow(object):
         self.label.setText(_translate("MainWindow", "Actions:", None))
         self.label_4.setText(_translate("MainWindow", "UID:", None))
         self.label_5.setText(_translate("MainWindow", "Tags:", None))
-        self.label_3.setText(_translate("MainWindow", "Comments:", None))
         self.label_9.setText(_translate("MainWindow", "Text:", None))
         self.timeline_switch.setItemText(0, _translate("MainWindow", "Edit action", None))
         self.timeline_switch.setItemText(1, _translate("MainWindow", "View frame", None))
         self.label_6.setText(_translate("MainWindow", "Roles:", None))
         self.role_table.setSortingEnabled(True)
-        self.role_table.headerItem().setText(0, _translate("MainWindow", "Role", None))
-        self.role_table.headerItem().setText(1, _translate("MainWindow", "Node", None))
+        self.role_table.headerItem().setText(0, _translate("MainWindow", "Node", None))
+        self.role_table.headerItem().setText(1, _translate("MainWindow", "Role", None))
         self.label_7.setText(_translate("MainWindow", "Node state changes:", None))
         self.nodestate_table.setSortingEnabled(True)
         self.nodestate_table.headerItem().setText(0, _translate("MainWindow", "Node", None))

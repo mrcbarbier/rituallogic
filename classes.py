@@ -26,6 +26,8 @@ class Atom(object):
         return self.uid
 
     def __eq__(self,atom):
+        if isinstance(atom,basestring):
+            return self.uid==atom
         return self.uid==atom.uid
 
     def match(self,exp):
@@ -105,9 +107,9 @@ class Action(AtomContainer):
         uid (string): Identifier.
         atoms (list): Mutable collection of atoms characterizing the action,
             e.g. adverb, semantic/symbolic content, annotations.
-        members (dict): Roles occupied by different nodes in the action.
-            {Keyword: Node}
-        changes (dict): Assign new atoms to member nodes.
+        roles (dict): Roles occupied by different nodes in the action.
+            {Node: Keyword}
+        states (dict): Assign new atoms to member nodes.
             {Node: list(Atom or AtomChange)}
         relations (list): Change relations between nodes
 
@@ -117,7 +119,7 @@ class Action(AtomContainer):
 
     Action Templates are available elsewhere. For instance, the template
         light(Priest,Fire)
-    takes these nodes as members and also assigns the atom "lit" to Fire.
+    takes these nodes as roles and also assigns the atom "lit" to Fire.
     """
 
 
@@ -127,7 +129,7 @@ class Action(AtomContainer):
 
     @property
     def nodes(self):
-        return set(self.members.values()).union( set(self.changes.keys()) )
+        return set(self.roles.keys()).union( set(self.states.keys()) )
 
     def add_relation(self,relation):
         """Add relation"""
@@ -135,25 +137,25 @@ class Action(AtomContainer):
 
     def add_change(self,node,change):
         """Add either change or list of changes on node"""
-        self.changes.setdefault(node,[])
+        self.states.setdefault(node,[])
         try:
-            self.changes[node]+=change
+            self.states[node]+=change
         except:
-            self.changes.append(change)
+            self.states.append(change)
 
-    def __init__(self,uid,atoms=[],members={},changes={},relations=()):
+    def __init__(self,uid,atoms=[],roles={},states={},relations=()):
         self.uid=uid
         self.atoms=list(atoms)
-        self.members=OrderedDict(members)
-        self.changes=OrderedDict(changes)
+        self.roles=OrderedDict(roles)
+        self.states=OrderedDict(states)
         self.relations=list(relations)
 
 
-        if not set(ACTION_KEYWORDS)>= set(members):
-            #Some of the members have a role that is not listed in Parameters.
-            raise Exception('Action Keywords {} not permitted.'.format(
-                    sorted(set(members)- set(ACTION_KEYWORDS)) )
-                )
+        #if not set(ACTION_KEYWORDS)>= set(roles.values()):
+            ##Some of the roles have a role that is not listed in Parameters.
+            #raise Exception('Action Keywords {} not permitted.'.format(
+                    #sorted(set(roles)- set(ACTION_KEYWORDS)) )
+                #)
 
 
 class Frame(AtomContainer):
@@ -164,7 +166,7 @@ class Frame(AtomContainer):
         atoms (list): Mutable collection of atoms characterizing the frame.
         actions (list): Mutable collection of actions in the frame.
 
-    (NB: 'Frame' as in single movie frame_."""
+    (NB: 'Frame' as in single movie frame.)"""
 
 
     @property
@@ -180,7 +182,7 @@ class Frame(AtomContainer):
     def nodes(self):
         nodes=[]
         for a in self.actions:
-            nodes+= a.members.values()
+            nodes+= a.roles.keys()
         return set(nodes)
 
     def add_action(self,action):
